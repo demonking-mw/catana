@@ -52,7 +52,6 @@ Do so in a new file called settle_eval_simple.py
 Create me a function called in game_state.py that when called, run the previously defined evaluation algorithm on every single valid settlement spots. NOTE: YOU MUST CAREFULLY CONFIRM THE SET OF VALID SETTLEMENT SPOTS. 
 
 
-
 Create me a simple settlement decision algorithm. It should take in a board data object. and output the best settlements and road for the next player (see data object definition as to the format). Your result should be in the form of a 3-tuple of ((settle_spot, road_spot): probability). Note that you cannot place a settlement next to another settlement, your road must be next to the current settlement you placed, and that all catan rules are applied. Another thing to note is that the data structure technically allows placing roads in the ocean, but you MUST NOT do that as it is not a legal placement.
 
 Parameter:
@@ -60,3 +59,10 @@ K
 
 To decide: pick the top 3 options, subtract each by (K * third_score). apply softmax on the results to be the probability of each.
 Road: point it to: a settlement less than 4 roads away, are not the top 9 scoring, and are the highest scoring amongst settlements that match previous req.
+
+Note, for ((settle_spot, road_spot): probability), road is not a direction, but a 2-tuple like how road is supposed to 
+
+
+python manual_processing/visualize_board.py src/sample.json --score
+
+---
