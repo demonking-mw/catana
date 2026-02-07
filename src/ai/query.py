@@ -28,6 +28,7 @@ from .config import AIProvider, DEFAULT_PROVIDER, get_api_key, get_default_model
 # Provider-specific dispatch (sync)
 # ---------------------------------------------------------------------------
 
+
 def _query_openai(
     prompt: str,
     model: str,
@@ -106,6 +107,7 @@ def _query_google(
 # ---------------------------------------------------------------------------
 # Provider-specific dispatch (async)
 # ---------------------------------------------------------------------------
+
 
 async def _query_openai_async(
     prompt: str,
@@ -202,6 +204,7 @@ _PROVIDER_DISPATCH_ASYNC = {
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def query_ai(
     prompt: str,

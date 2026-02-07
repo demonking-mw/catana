@@ -17,7 +17,6 @@ from typing import List, Optional, Tuple
 
 from base_computes.game_state import GameState, VALID_NODES
 from base_computes.settle_eval_simple import (
-    SettleEvalParams,
     rank_all_spots,
     score_settlement,
 )
@@ -47,7 +46,6 @@ def extend_option(gs: GameState) -> List[Tuple[str, float]]:
 def top_settle_spots(
     gs: GameState,
     x: int = 6,  # PARAMETER: Number of top settlement spots to return
-    params: Optional[SettleEvalParams] = None,
 ) -> List[Tuple[str, float]]:
     """Return the top *x* open settlement spots for setup placement.
 
@@ -63,16 +61,12 @@ def top_settle_spots(
     Args:
         gs:     Current game state.
         x:      Number of spots to return (default: 6).
-        params: Tunable scoring parameters (defaults used when *None*).
 
     Returns:
         List of ``(node_key, score)`` sorted descending, length ≤ *x*.
     """
-    if params is None:
-        params = SettleEvalParams()
-
     # 1. Score all open spots via the existing ranking engine
-    scored = rank_all_spots(gs, params)  # already sorted descending
+    scored = rank_all_spots(gs)  # already sorted descending
 
     # 2. Collect extended options
     extras = extend_option(gs)

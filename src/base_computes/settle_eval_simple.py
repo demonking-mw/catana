@@ -3,13 +3,15 @@
 Evaluates a settlement spot based on production value, resource scarcity,
 port access, and diversity.  All tunable parameters are grouped at the top
 of the file for easy adjustment.
+
+python3 src/tests/test_settle_decision.py src/sample.json
+
 """
 
 from __future__ import annotations
 
 import math
 from collections import deque
-from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from base_computes.game_state import GameState, VALID_NODES, get_adjacent_tiles
@@ -17,42 +19,36 @@ from base_computes.game_state import GameState, VALID_NODES, get_adjacent_tiles
 
 # ── Tunable Parameters ──────────────────────────────────────────────────────
 
+# Intrinsic value multiplier per resource type.
+# Index order: [Wood, Brick, Wool, Grain, Ore].
+BASE_RESOURCE_STRENGTH: List[float] = [1.0, 1.0, 0.9, 1.1, 1.1]
 
-@dataclass
-class SettleEvalParams:
-    """All knobs for the settlement scoring algorithm.
+# Controls how aggressively relative-strength is clamped.
+# Applied as ``strength ** dampening_factor`` (values < 1 compress,
+# values > 1 amplify).  0.5 is a square-root dampener.
+DAMPENING_FACTOR: float = 0.5
 
-    Attributes:
-        base_resource_strength:
-            Intrinsic value multiplier per resource type.
-            Index order: [Wood, Brick, Wool, Grain, Ore].
-        dampening_factor:
-            Controls how aggressively relative-strength is clamped.
-            Applied as ``strength ** dampening_factor`` (values < 1 compress,
-            values > 1 amplify).  0.5 is a good starting square-root dampener.
-        port_bonus:
-            Multiplier applied to port strength when the spot has port access.
-        prime_variate_bonus:
-            Flat bonus added when a spot has total production >= 10 *and*
-            at least 3 distinct resource types.
-        parity_preference:
-            Multiplier for the complement-parity bonus.  For each
-            complement pair (Wood/Brick, Grain/Ore), if the spot produces
-            both, the bonus is ``parity_preference × min(prod_a, prod_b)``.
-            The two pair bonuses are summed.
-        eval_weights:
-            Five floats that scale the five evaluation metrics before summing:
-            [raw_production, scarcity_weighted, port, prime_variate, parity].
-    """
+# Multiplier applied to port strength when the spot has port access.
+PORT_BONUS: float = 2
 
-    base_resource_strength: List[float] = field(
-        default_factory=lambda: [1.0, 1.0, 0.9, 1.1, 1.1]
-    )
-    dampening_factor: float = 0.5
-    port_bonus: float = 1.5
-    prime_variate_bonus: float = 2.0
-    parity_preference: float = 0.8
-    eval_weights: List[float] = field(default_factory=lambda: [1.0, 1.5, 1.0, 1.0, 1.0])
+# Flat bonus added when a spot has total production >= 10 *and*
+# at least 3 distinct resource types.
+PRIME_VARIATE_BONUS: float = 2.0
+
+# Multiplier for the complement-parity bonus.  For each
+# complement pair (Wood/Brick, Grain/Ore), if the spot produces
+# both, the bonus is ``parity_preference × min(prod_a, prod_b)``.
+PARITY_PREFERENCE: float = 0.8
+
+# Five floats that scale the five evaluation metrics before summing:
+# [raw_production, scarcity_weighted, port, prime_variate, parity].
+EVAL_WEIGHTS: List[float] = [1.0, 1.5, 1.0, 1.0, 1.0]
+
+# Score spread controller for settle_decision softmax.
+# Controls probability distribution: higher K = more different probabilities (more peaked),
+# lower K = more similar probabilities (more uniform). K=1.0 is standard softmax.
+# ALREADY TUNED
+K: float = 2.5
 
 
 # ── Dice-number → pip mapping ───────────────────────────────────────────────
@@ -102,7 +98,6 @@ _COMPLEMENT = {0: 1, 1: 0, 3: 4, 4: 3}
 
 def _compute_relative_strengths(
     total_prod: List[float],
-    params: SettleEvalParams,
 ) -> List[float]:
     """Compute dampened relative strength for each resource.
 
@@ -118,7 +113,7 @@ def _compute_relative_strengths(
     """
     strengths: List[float] = []
     for r in range(5):
-        base = params.base_resource_strength[r]
+        base = BASE_RESOURCE_STRENGTH[r]
 
         # overall scarcity
         if total_prod[r] > 0:
@@ -135,7 +130,7 @@ def _compute_relative_strengths(
 
         raw = base * overall * pairwise
         # dampen so the model doesn't overvalue rare resources
-        dampened = math.pow(raw, params.dampening_factor) if raw > 0 else 0.0
+        dampened = math.pow(raw, DAMPENING_FACTOR) if raw > 0 else 0.0
         strengths.append(dampened)
 
     return strengths
@@ -146,7 +141,6 @@ def _compute_relative_strengths(
 
 def _compute_port_strengths(
     total_prod: List[float],
-    params: SettleEvalParams,
 ) -> Dict[int, float]:
     """Compute per-port-type strength.
 
@@ -159,7 +153,7 @@ def _compute_port_strengths(
     """
     # dampened total yields for each resource
     dampened_yields = [
-        math.pow(p, params.dampening_factor) if p > 0 else 0.0 for p in total_prod
+        math.pow(p, DAMPENING_FACTOR) if p > 0 else 0.0 for p in total_prod
     ]
 
     # normalise: second-highest dampened yield → 1
@@ -201,14 +195,12 @@ def _spot_production(gs: GameState, node_key: str) -> List[float]:
 def score_settlement(
     gs: GameState,
     node_key: str,
-    params: Optional[SettleEvalParams] = None,
 ) -> float:
     """Score a single settlement spot.
 
     Args:
         gs:        Current game state.
         node_key:  Settlement node key (``"T1_T2_T3"``).
-        params:    Tunable parameters (uses defaults if *None*).
 
     Returns:
         A float score — higher is better.
@@ -225,13 +217,10 @@ def score_settlement(
            if the spot produces both, adds
            ``parity_preference × min(pair_production)``.
     """
-    if params is None:
-        params = SettleEvalParams()
-
     # Pre-compute board-wide data
     total_prod = _total_production_by_resource(gs)
-    rel_strengths = _compute_relative_strengths(total_prod, params)
-    port_strengths = _compute_port_strengths(total_prod, params)
+    rel_strengths = _compute_relative_strengths(total_prod)
+    port_strengths = _compute_port_strengths(total_prod)
 
     # Spot-level production
     prod = _spot_production(gs, node_key)
@@ -246,20 +235,20 @@ def score_settlement(
     port_bonus_val = 0.0
     if node_key in gs.map.ports:
         port_type = gs.map.ports[node_key]
-        port_bonus_val = port_strengths.get(port_type, 0.0) * params.port_bonus
+        port_bonus_val = port_strengths.get(port_type, 0.0) * PORT_BONUS
 
     # Metric 4: prime variate bonus
     prime_variate_val = 0.0
     distinct_resources = sum(1 for p in prod if p > 0)
     if raw_prod >= 10 and distinct_resources >= 3:
-        prime_variate_val = params.prime_variate_bonus
+        prime_variate_val = PRIME_VARIATE_BONUS
 
     # Metric 5: complement parity bonus
     # Wood(0)↔Brick(1), Grain(3)↔Ore(4)
     parity_val = 0.0
     for a, b in ((0, 1), (3, 4)):
         if prod[a] > 0 and prod[b] > 0:
-            parity_val += params.parity_preference * min(prod[a], prod[b])
+            parity_val += PARITY_PREFERENCE * min(prod[a], prod[b])
 
     # Weighted sum
     metrics = [
@@ -269,13 +258,12 @@ def score_settlement(
         prime_variate_val,
         parity_val,
     ]
-    score = sum(m * w for m, w in zip(metrics, params.eval_weights))
+    score = sum(m * w for m, w in zip(metrics, EVAL_WEIGHTS))
     return score
 
 
 def rank_all_spots(
     gs: GameState,
-    params: Optional[SettleEvalParams] = None,
     top_n: Optional[int] = None,
 ) -> List[tuple[str, float]]:
     """Score every valid, unoccupied settlement spot and return ranked list.
@@ -284,14 +272,11 @@ def rank_all_spots(
 
     Args:
         gs:     Current game state.
-        params: Tunable parameters.
         top_n:  If set, return only the top *n* results.
 
     Returns:
         List of ``(node_key, score)`` sorted descending by score.
     """
-    if params is None:
-        params = SettleEvalParams()
 
     all_nodes = sorted(VALID_NODES)
 
@@ -309,7 +294,7 @@ def rank_all_spots(
 
     open_spots = [n for n in all_nodes if n not in blocked]
 
-    results = [(n, score_settlement(gs, n, params)) for n in open_spots]
+    results = [(n, score_settlement(gs, n)) for n in open_spots]
     results.sort(key=lambda x: x[1], reverse=True)
     if top_n is not None:
         results = results[:top_n]
@@ -317,21 +302,6 @@ def rank_all_spots(
 
 
 # ── Settlement Decision Algorithm ───────────────────────────────────────────
-
-
-@dataclass
-class SettleDecisionParams:
-    """Parameters for the settlement decision algorithm.
-
-    Attributes:
-        K:  Score spread controller.  Each of the top-3 scores is adjusted
-            by subtracting ``K * third_score`` before softmax.
-        eval_params:  Settlement scoring parameters forwarded to the
-            evaluation engine (uses defaults when *None*).
-    """
-
-    K: float = 0.5
-    eval_params: Optional[SettleEvalParams] = None
 
 
 # ── Road / edge helpers ─────────────────────────────────────────────────────
@@ -426,10 +396,24 @@ def _bfs_from_node(
 # ── Softmax utility ─────────────────────────────────────────────────────────
 
 
-def _softmax(values: List[float]) -> List[float]:
-    """Numerically-stable softmax over a list of floats."""
-    m = max(values)
-    exps = [math.exp(v - m) for v in values]
+def _softmax(values: List[float], spread_factor: float = 1.0) -> List[float]:
+    """Numerically-stable softmax with spread control.
+    
+    Args:
+        values: List of floats to apply softmax to.
+        spread_factor: Controls distribution spread. Higher = more different probabilities,
+                      lower = more uniform probabilities. Uses inverse temperature scaling.
+    """
+    # Convert spread_factor to temperature (inverse relationship)
+    # Higher spread_factor → lower temperature → more peaked
+    # Lower spread_factor → higher temperature → more uniform
+    temperature = 1.0 / spread_factor if spread_factor > 0 else 1.0
+    
+    # Scale by temperature
+    scaled = [v / temperature for v in values]
+    # Numerically stable softmax
+    m = max(scaled)
+    exps = [math.exp(v - m) for v in scaled]
     s = sum(exps)
     return [e / s for e in exps]
 
@@ -499,7 +483,6 @@ def _pick_road(
 
 def settle_decision(
     gs: GameState,
-    params: Optional[SettleDecisionParams] = None,
 ) -> List[Tuple[Tuple[str, str], float]]:
     """Choose up to 3 settlement + road placements with softmax probabilities.
 
@@ -507,8 +490,9 @@ def settle_decision(
     ---------
     1. Score every open settlement spot (via ``rank_all_spots``).
     2. Pick the top 3.
-    3. Adjust scores:  ``score_i -= K × third_score``.
-       Apply **softmax** to obtain per-option probabilities.
+    3. Apply softmax with spread factor K to convert scores to probabilities.
+       Higher K → more peaked distribution (larger differences).
+       Lower K → more uniform distribution (smaller differences).
     4. For each settlement pick a road edge adjacent to it that points
        toward the best expansion target.
 
@@ -523,8 +507,6 @@ def settle_decision(
     ----------
     gs : GameState
         Current game state.
-    params : SettleDecisionParams, optional
-        Decision tuning knobs.
 
     Returns
     -------
@@ -533,15 +515,8 @@ def settle_decision(
         *road_spot*:   edge key ``"T1_T2"``
         *probability*: softmax-derived float (sums to ≈ 1).
     """
-    if params is None:
-        params = SettleDecisionParams()
-
-    eval_params = (
-        params.eval_params if params.eval_params is not None else SettleEvalParams()
-    )
-
     # 1. Score every open spot
-    ranked = rank_all_spots(gs, eval_params)
+    ranked = rank_all_spots(gs)
 
     if not ranked:
         return []
@@ -553,10 +528,9 @@ def settle_decision(
     # Top-12 keys for road-target exclusion
     top12_keys = {node for node, _ in ranked[:12]}
 
-    # 3. Score adjustment  →  softmax
-    third_score = ranked[min(2, len(ranked) - 1)][1]
-    adjusted = [score - params.K * third_score for _, score in top]
-    probs = _softmax(adjusted)
+    # 3. Apply softmax with spread factor K
+    scores = [score for _, score in top]
+    probs = _softmax(scores, spread_factor=K)
 
     # 4. Pair each settlement with the best road
     score_lookup: Dict[str, float] = {node: score for node, score in ranked}

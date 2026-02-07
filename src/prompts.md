@@ -74,7 +74,6 @@ Build me a function that comes up with a list of X settle spots. Requirements:
 
 write it in settle_options.py
 
----
 
 build me two ai query function, inside the ai folder.
 One is normal, the other one is async.
@@ -83,3 +82,40 @@ The function itself doesn't need many fancy action, just relay the request to th
 Make use of default values such that the function is callable with minimal extra params while also callable with specific AI models, etc.
 
 Expected use case: a function need to query AI. Instead of doing it directly, it calls one of these functions depending on sync/async. It gets the response relayed.
+
+---
+
+With the settle option generator and settle decider, build me a settle simulator that use the settle option generator to generate a list of likely cases for my current settle, then simulate where everyone else settles for each of my possible settle cases. Note for probabilistic analysis, the goal is to compare these options. Do not attempt to calculate their relatively likelihood in this function.
+
+Parameter:
+
+X: same param as the number of settles decided by the settle options function, don't redefine here
+max_window: maximum number of case per settle option
+
+Input: a board state
+Output: a list of X ((current settle option, current road option), list-of-max_window(placeout result))
+explain: placeout result is a board data object that capture the state after all 4 players placed their 2 settles.
+
+Procedure:
+1. use settle option generator to generate a list of possible option that I can settle on
+2. for each option: assume I settled there, use settle predictor to predict where will the next person will settle (this gives 3 subcases per case).
+If there are more than max_window cases after the operation: only keep the top max_window likely case by probability, then normalize the probability of these cases so they sum to 1. 
+Then, for each case of his possible placement, simulate the next placement assume I placed where I did and the previous person placed where he did (for each case after the previous simulation/normalization), normalize if total cases > max_window, then repeat till all 8 settlements are placed. 
+
+Keep track of the combined probability by multiplication. You must not take into consideration the probability of the first set of placement determined by the settle option generator for myself (we are simulating for each case so its probability would be 1)
+
+This gives a list of max_window possible place-outs, each with their probability, per settle option.
+
+Create a list with each settle option paired with the list of (place-out, probability)s. Return that
+build this function in settle_sim.py
+
+
+---
+
+
+
+
+
+run the tests in an MCP server and confirm the following:
+1. the prob of all cases under each options add to 1
+2. no settlements in any cases are in conflict with each other (there is a pre-defined settlement checker)
