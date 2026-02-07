@@ -29,13 +29,13 @@ RAW_POWER_PREFERENCE: float = 0.3
 # Dampening factor for relative-strength calculation (same formula as
 # settle scoring, but a separate value so it can be tuned independently).
 # Applied as ``strength ** dampening``.  < 1 compresses, > 1 amplifies.
-ROBBER_DAMPENING_FACTOR: float = 0.5
+ROBBER_DAMPENING_FACTOR: float = 0.6
 
 # Softmax spread factor for converting tile scores → probabilities.
 # Higher = more peaked (strongest tile gets much higher probability),
 # lower  = more uniform.  Separate from the settle-decision K so it
 # can be tuned independently.
-ROBBER_K: float = 1
+ROBBER_K: float = 0.2
 
 
 # ── Internals ────────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ def predict_robber(
     1. For each land tile, compute ``expected_prod = pips × num_adjacent_settlements``.
     2. Sum production by resource type → resource weights.  Normalise
        so the average weight is 1.
-    3. Compute dampened relative strengths (base_strength × scarcity ×
+    3. Compute dampened relative strengths (base_strength + scarcity +
        complement ratio, dampened by ``ROBBER_DAMPENING_FACTOR``) — same
        formula as settle scoring with a separate dampening parameter.
     4. Add ``RAW_POWER_PREFERENCE`` to each → ``balanced_preferences``.

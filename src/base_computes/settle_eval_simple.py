@@ -21,24 +21,24 @@ from base_computes.game_state import GameState, VALID_NODES, get_adjacent_tiles
 
 # Intrinsic value multiplier per resource type.
 # Index order: [Wood, Brick, Wool, Grain, Ore].
-BASE_RESOURCE_STRENGTH: List[float] = [1.0, 1.0, 0.9, 1.1, 1.1]
+BASE_RESOURCE_STRENGTH: List[float] = [1.0, 1.0, 0.9, 1.27, 1.2]
 
 # Controls how aggressively relative-strength is clamped.
 # Applied as ``strength ** dampening_factor`` (values < 1 compress,
 # values > 1 amplify).  0.5 is a square-root dampener.
-DAMPENING_FACTOR: float = 0.5
+DAMPENING_FACTOR: float = 0.8
 
 # Multiplier applied to port strength when the spot has port access.
-PORT_BONUS: float = 2
+PORT_BONUS: float = 3
 
 # Flat bonus added when a spot has total production >= 10 *and*
 # at least 3 distinct resource types.
-PRIME_VARIATE_BONUS: float = 2.0
+PRIME_VARIATE_BONUS: float = 4
 
 # Multiplier for the complement-parity bonus.  For each
 # complement pair (Wood/Brick, Grain/Ore), if the spot produces
 # both, the bonus is ``parity_preference × min(prod_a, prod_b)``.
-PARITY_PREFERENCE: float = 0.8
+PARITY_PREFERENCE: float = 1.3
 
 # Five floats that scale the five evaluation metrics before summing:
 # [raw_production, scarcity_weighted, port, prime_variate, parity].
@@ -48,7 +48,7 @@ EVAL_WEIGHTS: List[float] = [1.0, 1.5, 1.0, 1.0, 1.0]
 # Controls probability distribution: higher K = more different probabilities (more peaked),
 # lower K = more similar probabilities (more uniform). K=1.0 is standard softmax.
 # ALREADY TUNED
-K: float = 2.5
+K: float = 1
 
 
 # ── Dice-number → pip mapping ───────────────────────────────────────────────
@@ -104,8 +104,8 @@ def _compute_relative_strengths(
 
     For each resource *r*:
         raw_strength = base_strength[r]
-                     × (1 / total_prod[r])           # overall scarcity
-                     × (prod[r] / prod[complement])   # pairwise ratio
+                     + (1 / total_prod[r])           # overall scarcity
+                     + (prod[complement] / prod[r])   # pairwise ratio (bottleneck bonus)
     Then apply dampening:  dampened = raw ** dampening_factor
 
     Wool (no complement) uses pairwise ratio = 1.
@@ -128,14 +128,15 @@ def _compute_relative_strengths(
         else:
             overall = 20.0  # very scarce → high value
 
-        # pairwise strength
+        # pairwise strength (complement's prod / this resource's prod)
+        # → scarce resource with abundant complement gets a higher score
         comp = _COMPLEMENT.get(r)
-        if comp is not None and total_prod[comp] > 0:
-            pairwise = total_prod[r] / total_prod[comp]
+        if comp is not None and total_prod[r] > 0:
+            pairwise = total_prod[comp] / total_prod[r]
         else:
             pairwise = 1.0
 
-        raw = base * overall * pairwise
+        raw = base + overall + pairwise
         # dampen so the model doesn't overvalue rare resources
         dampened = math.pow(raw, df) if raw > 0 else 0.0
         strengths.append(dampened)

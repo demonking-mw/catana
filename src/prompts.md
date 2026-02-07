@@ -29,7 +29,7 @@ evaluation weighting: 4 floats.
 
 Outline of algorithm:
 1. Calculate production of each type of resource. this will yield you with the total productivity of each resource in points. (in that 2 is 1 point, 3 is 2 point, ... 6 is 5 point, 8 is 5 point, ... 11 is 2 point, 12 is 1 point)
-1.1. Use the relative yield to calculate a relative strength of each resources. The strength is the product of: base resource strength, which is a constant; overall strength, which is 1 / total_productivity_of_resource; pairwise strength, which is its production / its complement's production. Note: wood and brick are complements, wheat and ore are complements, sheep is nobody's complement.
+1.1. Use the relative yield to calculate a relative strength of each resources. The strength is the sum of: base resource strength, which is a constant; overall strength, which is 1 / total_productivity_of_resource; pairwise strength, which is its production / its complement's production. Note: wood and brick are complements, wheat and ore are complements, sheep is nobody's complement.
 After obtaining the relative strength, apply some variable dampning method so the model won't overvalue a resource like crazy.
 2. find out all open settlement spots, calculate spot's production, which should be an array of 5 elements, capturing how much production of each resource will the tile bring. 
 2.1. the total production of the tile is the first evaluation metric
@@ -138,7 +138,7 @@ Generate a map of tile - expected prod
 Generate a total resource-wise prod (sum of all tiles of the same resources) that is resource weight.
 normalize the weights so average is 1.
 
-calculate a relative strength of each resources. The strength is the product of: base resource strength, which is a constant; overall strength, which is 1 / total_productivity_of_resource; pairwise strength, which is its production / its complement's production. Note: wood and brick are complements, wheat and ore are complements, sheep is nobody's complement.
+calculate a relative strength of each resources. The strength is the sum of: base resource strength, which is a constant; overall strength, which is 1 / total_productivity_of_resource; pairwise strength, which is its production / its complement's production. Note: wood and brick are complements, wheat and ore are complements, sheep is nobody's complement.
 After obtaining the relative strength, apply some variable dampning method so the model won't overvalue a resource like crazy.
 NOTE: this part is basically the same as a segment in settle scoring. You can reuse the code. For any parameter, define it as required above
 Add raw_power_preference to each to get balanced_preferences. 
