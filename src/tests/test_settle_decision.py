@@ -22,11 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from base_computes import GameState
-from base_computes.settle_eval_simple import (
-    SettleDecisionParams,
-    SettleEvalParams,
-    settle_decision,
-)
+from base_computes.settle_eval_simple import settle_decision
 from manual_processing.visualize_board import render_board, Colors
 
 
@@ -35,12 +31,6 @@ def main():
         description="Test settlement decision on an HDCS JSON board state."
     )
     parser.add_argument("json_path", help="Path to the HDCS JSON file.")
-    parser.add_argument(
-        "--K",
-        type=float,
-        default=0.5,
-        help="Score spread parameter for softmax (default: 0.5).",
-    )
     args = parser.parse_args()
 
     # ── Load JSON ────────────────────────────────────────────────────────
@@ -59,8 +49,7 @@ def main():
         sys.exit(1)
 
     # ── Evaluate scores (needed for board overlay) ────────────────────
-    eval_params = SettleEvalParams()
-    gs.evaluate_all_settlements(eval_params)
+    gs.evaluate_all_settlements()
 
     # ── Visualize board ──────────────────────────────────────────────────
     try:
@@ -69,10 +58,9 @@ def main():
         print(f"Visualization error: {e}")
 
     # ── Run settlement decision ──────────────────────────────────────────
-    print(f"\n{Colors.BOLD}--- SETTLEMENT DECISION (K={args.K}) ---{Colors.RESET}\n")
+    print(f"\n{Colors.BOLD}--- SETTLEMENT DECISION ---{Colors.RESET}\n")
 
-    dec_params = SettleDecisionParams(K=args.K, eval_params=eval_params)
-    results = settle_decision(gs, dec_params)
+    results = settle_decision(gs)
 
     if not results:
         print("No valid settlement options available.")

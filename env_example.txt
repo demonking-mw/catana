@@ -1,0 +1,3 @@
+OPENAI_API_KEY="banana"
+ANTHROPIC_API_KEY="banana"
+GOOGLE_API_KEY="banana"

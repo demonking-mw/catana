@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field, model_validator
-from typing import TYPE_CHECKING, List, Dict, Optional, Set, Tuple, Union
-
-if TYPE_CHECKING:
-    from base_computes.settle_eval_simple import SettleEvalParams
+from typing import List, Dict, Optional, Set, Tuple, Union
 
 
 # --- Positional Array Indices ---
@@ -381,18 +378,78 @@ class GameState(BaseModel):
     # Optional augmentation: node_key -> score (populated by evaluate_all_settlements)
     settle_scores: Optional[Dict[str, float]] = None
 
+    @model_validator(mode="after")
+    def _validate_settlements(self) -> "GameState":
+        """Ensure no settlements overlap or violate the distance rule.
+
+        Runs automatically when a ``GameState`` is constructed.
+        Raises ``ValueError`` on any conflict.
+        """
+        errors = self.validate_settlements()
+        if errors:
+            raise ValueError(
+                "Settlement validation failed:\n"
+                + "\n".join(f"  - {e}" for e in errors)
+            )
+        return self
+
+    def validate_settlements(self) -> List[str]:
+        """Check settlement placement for overlaps and adjacency violations.
+
+        Validates two sources:
+
+        1. **``map.nodes``** — the canonical settlement registry.
+           - Every node key must be a valid node (in ``VALID_NODES``).
+           - No two settlements may occupy the same node (dict enforces
+             uniqueness, but player IDs referenced must exist in
+             ``self.players``).
+           - No two settlements may be directly adjacent (share 2 of
+             their 3 tile IDs).
+
+        2. **``players`` cross-check** — every player ID referenced in
+           ``map.nodes`` must correspond to an actual player in the
+           ``players`` list.
+
+        Returns:
+            List of error strings.  Empty means valid.
+        """
+        errors: List[str] = []
+        node_keys = list(self.map.nodes.keys())
+        valid_player_ids = {p.id for p in self.players}
+
+        # ── Check each node is valid and player ID exists ────────────
+        for node_key, (pid, btype) in self.map.nodes.items():
+            if node_key not in VALID_NODES:
+                errors.append(f"Settlement at {node_key} is not a valid node")
+            if pid not in valid_player_ids:
+                errors.append(
+                    f"Settlement at {node_key} references player {pid} "
+                    f"who does not exist in the players list"
+                )
+
+        # ── Check no two settlements are directly adjacent ───────────
+        # Two nodes are adjacent when they share exactly 2 of their
+        # 3 tile IDs.
+        for i in range(len(node_keys)):
+            tiles_i = set(node_keys[i].split("_"))
+            for j in range(i + 1, len(node_keys)):
+                tiles_j = set(node_keys[j].split("_"))
+                if len(tiles_i & tiles_j) == 2:
+                    errors.append(
+                        f"Settlements at {node_keys[i]} and {node_keys[j]} "
+                        f"are directly adjacent (distance rule violation)"
+                    )
+
+        return errors
+
     def evaluate_all_settlements(
         self,
-        params: Optional[SettleEvalParams] = None,
     ) -> Dict[str, float]:
         """Score every valid settlement spot and cache the result.
 
         Iterates over all 54 ``VALID_NODES``, runs the evaluation
         algorithm from ``settle_eval_simple.score_settlement`` on each,
         and stores the mapping in ``self.settle_scores``.
-
-        Args:
-            params: Tunable eval parameters (uses defaults if *None*).
 
         Returns:
             Dict mapping each node key to its score (also stored on
@@ -402,7 +459,7 @@ class GameState(BaseModel):
 
         scores: Dict[str, float] = {}
         for node_key in sorted(VALID_NODES):
-            scores[node_key] = score_settlement(self, node_key, params)
+            scores[node_key] = score_settlement(self, node_key)
         self.settle_scores = scores
         return scores
 
@@ -417,7 +474,8 @@ class GameState(BaseModel):
             1. If ``data["map"]["ports"]`` is empty/missing, generate it
                from tile data.
             2. Validate port info (pair consistency, distribution, tiles ↔ ports).
-            3. Return a validated ``GameState`` or raise ``ValueError``.
+            3. If ``data["players"]`` is empty, initialize 4 default players.
+            4. Return a validated ``GameState`` or raise ``ValueError``.
         """
         map_data = data.get("map", {})
         tiles = map_data.get("tiles", [])
@@ -437,5 +495,18 @@ class GameState(BaseModel):
                 "Port validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
             )
 
-        # Step 3: build validated object
+        # Step 3: repair missing players
+        if not data.get("players"):
+            data["players"] = [
+                {
+                    "id": i,
+                    "public": [0, 0, 0, 0],  # [VP, Army, Road_Len, Res_Count]
+                    "res_k": [0, 0, 0, 0, 0],  # [Wood, Brick, Wool, Grain, Ore]
+                    "res_u": [],
+                    "devs": [],
+                }
+                for i in range(4)
+            ]
+
+        # Step 4: build validated object
         return cls.model_validate(data)
