@@ -8,10 +8,11 @@ of the file for easy adjustment.
 from __future__ import annotations
 
 import math
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from base_computes.game_state import GameState, VALID_NODES
+from base_computes.game_state import GameState, VALID_NODES, get_adjacent_tiles
 
 
 # ── Tunable Parameters ──────────────────────────────────────────────────────
@@ -51,9 +52,7 @@ class SettleEvalParams:
     port_bonus: float = 1.5
     prime_variate_bonus: float = 2.0
     parity_preference: float = 0.8
-    eval_weights: List[float] = field(
-        default_factory=lambda: [1.0, 1.5, 1.0, 1.0, 1.0]
-    )
+    eval_weights: List[float] = field(default_factory=lambda: [1.0, 1.5, 1.0, 1.0, 1.0])
 
 
 # ── Dice-number → pip mapping ───────────────────────────────────────────────
@@ -263,7 +262,13 @@ def score_settlement(
             parity_val += params.parity_preference * min(prod[a], prod[b])
 
     # Weighted sum
-    metrics = [raw_prod, scarcity_weighted, port_bonus_val, prime_variate_val, parity_val]
+    metrics = [
+        raw_prod,
+        scarcity_weighted,
+        port_bonus_val,
+        prime_variate_val,
+        parity_val,
+    ]
     score = sum(m * w for m, w in zip(metrics, params.eval_weights))
     return score
 
@@ -308,4 +313,257 @@ def rank_all_spots(
     results.sort(key=lambda x: x[1], reverse=True)
     if top_n is not None:
         results = results[:top_n]
+    return results
+
+
+# ── Settlement Decision Algorithm ───────────────────────────────────────────
+
+
+@dataclass
+class SettleDecisionParams:
+    """Parameters for the settlement decision algorithm.
+
+    Attributes:
+        K:  Score spread controller.  Each of the top-3 scores is adjusted
+            by subtracting ``K * third_score`` before softmax.
+        eval_params:  Settlement scoring parameters forwarded to the
+            evaluation engine (uses defaults when *None*).
+    """
+
+    K: float = 0.5
+    eval_params: Optional[SettleEvalParams] = None
+
+
+# ── Road / edge helpers ─────────────────────────────────────────────────────
+
+
+def _is_land_tile(tiles: List[List[int]], tile_id: int) -> bool:
+    """True when *tile_id* is a land tile (not ocean, not a port)."""
+    res_id, num_token = tiles[tile_id]
+    return res_id != 6 and num_token != -1
+
+
+def _is_valid_road_edge(tiles: List[List[int]], edge_key: str) -> bool:
+    """True when at least one tile in the edge pair is a land tile."""
+    t1, t2 = (int(t) for t in edge_key.split("_"))
+    return _is_land_tile(tiles, t1) or _is_land_tile(tiles, t2)
+
+
+def _get_node_edges(node_key: str) -> List[str]:
+    """Return the 3 edge keys (``"Ta_Tb"``) adjacent to a settlement node."""
+    tile_ids = [int(t) for t in node_key.split("_")]
+    edges: List[str] = []
+    for i in range(3):
+        for j in range(i + 1, 3):
+            a, b = sorted([tile_ids[i], tile_ids[j]])
+            edges.append(f"{a}_{b}")
+    return edges
+
+
+def _get_other_node(edge_key: str, from_node: str) -> Optional[str]:
+    """Find the valid node on the opposite side of *edge_key* from *from_node*.
+
+    Returns ``None`` when the edge sits on the board boundary (no valid
+    node on the other side).
+    """
+    edge_tiles = {int(t) for t in edge_key.split("_")}
+    from_tiles = {int(t) for t in from_node.split("_")}
+    third_tile = (from_tiles - edge_tiles).pop()
+
+    t1, t2 = sorted(edge_tiles)
+    common = get_adjacent_tiles(t1) & get_adjacent_tiles(t2)
+    common.discard(third_tile)
+
+    for other_tile in common:
+        key = "_".join(str(t) for t in sorted([t1, t2, other_tile]))
+        if key in VALID_NODES:
+            return key
+    return None
+
+
+# ── BFS for road targeting ──────────────────────────────────────────────────
+
+
+def _bfs_from_node(
+    gs: GameState,
+    start: str,
+    max_dist: int,
+) -> Dict[str, Tuple[int, Optional[str]]]:
+    """BFS over the node-edge graph from *start*.
+
+    Returns ``{node_key: (distance, first_edge)}`` for every reachable
+    node within *max_dist* road-edges.  *first_edge* is the edge leaving
+    *start* on the shortest path (``None`` for *start* itself).
+
+    Only traverses edges that are valid road placements and not already
+    occupied.
+    """
+    visited: Dict[str, Tuple[int, Optional[str]]] = {start: (0, None)}
+    queue: deque = deque([(start, 0, None)])
+
+    while queue:
+        current, dist, first_edge = queue.popleft()
+        if dist >= max_dist:
+            continue
+
+        for edge in _get_node_edges(current):
+            if not _is_valid_road_edge(gs.map.tiles, edge):
+                continue
+            if edge in gs.map.edges:
+                continue
+
+            neighbor = _get_other_node(edge, current)
+            if neighbor is None or neighbor in visited:
+                continue
+
+            fe = first_edge if first_edge is not None else edge
+            visited[neighbor] = (dist + 1, fe)
+            queue.append((neighbor, dist + 1, fe))
+
+    return visited
+
+
+# ── Softmax utility ─────────────────────────────────────────────────────────
+
+
+def _softmax(values: List[float]) -> List[float]:
+    """Numerically-stable softmax over a list of floats."""
+    m = max(values)
+    exps = [math.exp(v - m) for v in values]
+    s = sum(exps)
+    return [e / s for e in exps]
+
+
+# ── Road selection ──────────────────────────────────────────────────────────
+
+
+def _pick_road(
+    gs: GameState,
+    settle_spot: str,
+    score_lookup: Dict[str, float],
+    excluded_keys: set,
+) -> str:
+    """Select the best road edge adjacent to *settle_spot*.
+
+    Targets open settlement spots within road-distance < 4, excluding
+    the top-12 scoring nodes and any spot that is occupied or adjacent
+    to an occupied spot (distance rule).  Picks the highest-scoring
+    remainder.  Returns the first edge on the shortest path from
+    *settle_spot* to that target.
+
+    Falls back to any valid, unoccupied adjacent edge when no qualifying
+    target is found.
+    """
+    reachable = _bfs_from_node(gs, settle_spot, max_dist=3)
+
+    # Build set of nodes that cannot be settled: occupied + distance-rule blocked
+    blocked: set = set()
+    for occ_key in gs.map.nodes:
+        blocked.add(occ_key)
+        occ_tiles = set(occ_key.split("_"))
+        for node_key in reachable:
+            node_tiles = set(node_key.split("_"))
+            if len(occ_tiles & node_tiles) == 2:
+                blocked.add(node_key)
+
+    best_edge: Optional[str] = None
+    best_score = -float("inf")
+
+    for node, (dist, first_edge) in reachable.items():
+        if dist == 0:
+            continue
+        if node in excluded_keys:
+            continue
+        if node in blocked:
+            continue
+        if node not in score_lookup:
+            continue
+        if score_lookup[node] > best_score:
+            best_score = score_lookup[node]
+            best_edge = first_edge
+
+    if best_edge is not None:
+        return best_edge
+
+    # Fallback: any valid, unoccupied road adjacent to the settlement
+    for edge in _get_node_edges(settle_spot):
+        if _is_valid_road_edge(gs.map.tiles, edge) and edge not in gs.map.edges:
+            return edge
+
+    # Ultimate fallback (should never fire on a normal board)
+    return _get_node_edges(settle_spot)[0]
+
+
+# ── Public entry point ──────────────────────────────────────────────────────
+
+
+def settle_decision(
+    gs: GameState,
+    params: Optional[SettleDecisionParams] = None,
+) -> List[Tuple[Tuple[str, str], float]]:
+    """Choose up to 3 settlement + road placements with softmax probabilities.
+
+    Algorithm
+    ---------
+    1. Score every open settlement spot (via ``rank_all_spots``).
+    2. Pick the top 3.
+    3. Adjust scores:  ``score_i -= K × third_score``.
+       Apply **softmax** to obtain per-option probabilities.
+    4. For each settlement pick a road edge adjacent to it that points
+       toward the best expansion target.
+
+    Road target selection
+    ---------------------
+    BFS from the settlement up to 3 edges.  Among reachable open spots,
+    exclude the top-12 scoring nodes, then pick the highest-scoring
+    remainder.  The road returned is the first edge on the shortest path
+    from the settlement to the chosen target.
+
+    Parameters
+    ----------
+    gs : GameState
+        Current game state.
+    params : SettleDecisionParams, optional
+        Decision tuning knobs.
+
+    Returns
+    -------
+    list of ``((settle_spot, road_spot), probability)``
+        *settle_spot*: node key ``"T1_T2_T3"``
+        *road_spot*:   edge key ``"T1_T2"``
+        *probability*: softmax-derived float (sums to ≈ 1).
+    """
+    if params is None:
+        params = SettleDecisionParams()
+
+    eval_params = (
+        params.eval_params if params.eval_params is not None else SettleEvalParams()
+    )
+
+    # 1. Score every open spot
+    ranked = rank_all_spots(gs, eval_params)
+
+    if not ranked:
+        return []
+
+    # 2. Top 3 (or fewer if the board is nearly full)
+    n = min(3, len(ranked))
+    top = ranked[:n]
+
+    # Top-12 keys for road-target exclusion
+    top12_keys = {node for node, _ in ranked[:12]}
+
+    # 3. Score adjustment  →  softmax
+    third_score = ranked[min(2, len(ranked) - 1)][1]
+    adjusted = [score - params.K * third_score for _, score in top]
+    probs = _softmax(adjusted)
+
+    # 4. Pair each settlement with the best road
+    score_lookup: Dict[str, float] = {node: score for node, score in ranked}
+
+    results: List[Tuple[Tuple[str, str], float]] = []
+    for i, (settle_spot, _) in enumerate(top):
+        road = _pick_road(gs, settle_spot, score_lookup, top12_keys)
+        results.append(((settle_spot, road), probs[i]))
+
     return results
