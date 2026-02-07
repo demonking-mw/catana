@@ -65,4 +65,21 @@ Note, for ((settle_spot, road_spot): probability), road is not a direction, but 
 
 python manual_processing/visualize_board.py src/sample.json --score
 
+
+Build me a function that comes up with a list of X settle spots. Requirements:
+(Note, this is to simulate the setup stage)
+1. they must be open as of the current board state (not taken, not immediately next to a taken spot, not invalid by rule of catan), but it's ok if they interfere against each other.
+2. your pick should be the top X scoring spots according to the augmented settle scoring list.
+3. write an extend_option function that takes in the entire data object, and returns a list of extra settle spots. You should combine its output with your existing list, then return the bigger list. You are to leave the function blank (return empty) and write clear comment that this is a placeholder for future implementation.
+
+write it in settle_options.py
+
 ---
+
+build me two ai query function, inside the ai folder.
+One is normal, the other one is async.
+Make sure it's easy to add credential from different AI provider, then choose both provider and model to query on runtime.
+The function itself doesn't need many fancy action, just relay the request to the right AI and return the response.
+Make use of default values such that the function is callable with minimal extra params while also callable with specific AI models, etc.
+
+Expected use case: a function need to query AI. Instead of doing it directly, it calls one of these functions depending on sync/async. It gets the response relayed.

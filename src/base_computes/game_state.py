@@ -417,7 +417,8 @@ class GameState(BaseModel):
             1. If ``data["map"]["ports"]`` is empty/missing, generate it
                from tile data.
             2. Validate port info (pair consistency, distribution, tiles ↔ ports).
-            3. Return a validated ``GameState`` or raise ``ValueError``.
+            3. If ``data["players"]`` is empty, initialize 4 default players.
+            4. Return a validated ``GameState`` or raise ``ValueError``.
         """
         map_data = data.get("map", {})
         tiles = map_data.get("tiles", [])
@@ -437,5 +438,18 @@ class GameState(BaseModel):
                 "Port validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
             )
 
-        # Step 3: build validated object
+        # Step 3: repair missing players
+        if not data.get("players"):
+            data["players"] = [
+                {
+                    "id": i,
+                    "public": [0, 0, 0, 0],  # [VP, Army, Road_Len, Res_Count]
+                    "res_k": [0, 0, 0, 0, 0],  # [Wood, Brick, Wool, Grain, Ore]
+                    "res_u": [],
+                    "devs": [],
+                }
+                for i in range(4)
+            ]
+
+        # Step 4: build validated object
         return cls.model_validate(data)
