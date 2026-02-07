@@ -1,0 +1,21 @@
+# Virtual Environments
+src/venv/
+src/{venv_name}/
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+*Zone.Identifier
+
+# IDE
+.vscode/
+.idea/
