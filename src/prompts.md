@@ -29,7 +29,7 @@ evaluation weighting: 4 floats.
 
 Outline of algorithm:
 1. Calculate production of each type of resource. this will yield you with the total productivity of each resource in points. (in that 2 is 1 point, 3 is 2 point, ... 6 is 5 point, 8 is 5 point, ... 11 is 2 point, 12 is 1 point)
-1.1. Use the relative yield to calculate a relative strength of each resources. The strength is the product of: base resource strength, which is a constant; overall strength, which is 1 / total_productivity_of_resource; pairwise strength, which is its production / its complement's production. Note: wood and brick are complements, wheat and ore are complements, sheep is nobody's complement.
+1.1. Use the relative yield to calculate a relative strength of each resources. The strength is the sum of: base resource strength, which is a constant; overall strength, which is 1 / total_productivity_of_resource; pairwise strength, which is its production / its complement's production. Note: wood and brick are complements, wheat and ore are complements, sheep is nobody's complement.
 After obtaining the relative strength, apply some variable dampning method so the model won't overvalue a resource like crazy.
 2. find out all open settlement spots, calculate spot's production, which should be an array of 5 elements, capturing how much production of each resource will the tile bring. 
 2.1. the total production of the tile is the first evaluation metric
@@ -110,7 +110,7 @@ Create a list with each settle option paired with the list of (place-out, probab
 build this function in settle_sim.py
 
 
----
+
 
 
 
@@ -119,3 +119,35 @@ build this function in settle_sim.py
 run the tests in an MCP server and confirm the following:
 1. the prob of all cases under each options add to 1
 2. no settlements in any cases are in conflict with each other (there is a pre-defined settlement checker)
+
+
+---
+
+Write me a simple robber prediction algorithm for me that takes in a board data object and return a list (length 4 since 4 players) of robber preference
+Each robber preference is a list of 3 (location, probability), and the 3 probabilities sum to 1.
+
+Parameters: Make them easily accessed and changed. Do not allow overwrites.
+- base resource strength: 5 element array of how strong each resoureces are, it is already defined somewhere, use that.
+- raw power preference: how much robbing care about the raw prod over rare resources.
+- strength to probability parameters.
+
+
+Procedure/algorithm:
+Each tile produces (number of point) * (number of settlement adjacent) amount of resources expected
+Generate a map of tile - expected prod
+Generate a total resource-wise prod (sum of all tiles of the same resources) that is resource weight.
+normalize the weights so average is 1.
+
+calculate a relative strength of each resources. The strength is the sum of: base resource strength, which is a constant; overall strength, which is 1 / total_productivity_of_resource; pairwise strength, which is its production / its complement's production. Note: wood and brick are complements, wheat and ore are complements, sheep is nobody's complement.
+After obtaining the relative strength, apply some variable dampning method so the model won't overvalue a resource like crazy.
+NOTE: this part is basically the same as a segment in settle scoring. You can reuse the code. For any parameter, define it as required above
+Add raw_power_preference to each to get balanced_preferences. 
+Each tile's score is its expected_prod * balanced_preferences[resource_type]
+
+For each player, pick the top 3 tiles to rob by:
+1. they must not have a settle on the tile
+2. of those eligible, get the top 3 scoring.
+
+To get the probability, use the same strength to probability algorithm as the settle decision, which is already implemented. Use a separate set of parameters as they are not the same model. Put it in the parameter section for me to tune later.
+Return the result in the shape required
+
