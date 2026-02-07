@@ -98,6 +98,7 @@ _COMPLEMENT = {0: 1, 1: 0, 3: 4, 4: 3}
 
 def _compute_relative_strengths(
     total_prod: List[float],
+    dampening: Optional[float] = None,
 ) -> List[float]:
     """Compute dampened relative strength for each resource.
 
@@ -110,7 +111,13 @@ def _compute_relative_strengths(
     Wool (no complement) uses pairwise ratio = 1.
     If a resource has zero total production, treat its scarcity as a large
     constant (20) to avoid division by zero.
+
+    Args:
+        total_prod:  5-element list of total pip production per resource.
+        dampening:   Override for ``DAMPENING_FACTOR``.  When ``None``
+                     (default), the module-level constant is used.
     """
+    df = dampening if dampening is not None else DAMPENING_FACTOR
     strengths: List[float] = []
     for r in range(5):
         base = BASE_RESOURCE_STRENGTH[r]
@@ -130,7 +137,7 @@ def _compute_relative_strengths(
 
         raw = base * overall * pairwise
         # dampen so the model doesn't overvalue rare resources
-        dampened = math.pow(raw, DAMPENING_FACTOR) if raw > 0 else 0.0
+        dampened = math.pow(raw, df) if raw > 0 else 0.0
         strengths.append(dampened)
 
     return strengths
@@ -398,7 +405,7 @@ def _bfs_from_node(
 
 def _softmax(values: List[float], spread_factor: float = 1.0) -> List[float]:
     """Numerically-stable softmax with spread control.
-    
+
     Args:
         values: List of floats to apply softmax to.
         spread_factor: Controls distribution spread. Higher = more different probabilities,
@@ -408,7 +415,7 @@ def _softmax(values: List[float], spread_factor: float = 1.0) -> List[float]:
     # Higher spread_factor → lower temperature → more peaked
     # Lower spread_factor → higher temperature → more uniform
     temperature = 1.0 / spread_factor if spread_factor > 0 else 1.0
-    
+
     # Scale by temperature
     scaled = [v / temperature for v in values]
     # Numerically stable softmax

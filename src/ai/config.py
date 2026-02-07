@@ -15,7 +15,22 @@ To add a new provider:
 
 from enum import Enum
 from os import environ
+from pathlib import Path
 from typing import Optional
+
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+
+    # Look for .env in project root (two directories up from src/ai/config.py)
+    _dotenv_path = Path(__file__).resolve().parent.parent.parent / ".env"
+    if _dotenv_path.exists():
+        load_dotenv(_dotenv_path, override=True)
+    else:
+        print(f"[config] WARNING: .env not found at {_dotenv_path}")
+except ImportError:
+    print("[config] WARNING: python-dotenv not installed; .env will not be loaded")
+    pass
 
 
 class AIProvider(str, Enum):
@@ -33,9 +48,9 @@ _ENV_KEYS: dict[AIProvider, str] = {
 
 # Default model per provider (override at call-time if needed)
 DEFAULT_MODELS: dict[AIProvider, str] = {
-    AIProvider.OPENAI: "gpt-4o",
+    AIProvider.OPENAI: "gpt-4.1-mini",
     AIProvider.ANTHROPIC: "claude-sonnet-4-20250514",
-    AIProvider.GOOGLE: "gemini-2.0-flash",
+    AIProvider.GOOGLE: "gemini-2.5-flash",
 }
 
 # Sensible global default provider

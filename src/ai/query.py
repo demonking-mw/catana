@@ -86,22 +86,23 @@ def _query_google(
     temperature: float,
     max_tokens: int,
 ) -> str:
-    from google import genai
+    import requests
 
-    client = genai.Client(api_key=api_key)
-    config = genai.types.GenerateContentConfig(
-        temperature=temperature,
-        max_output_tokens=max_tokens,
-    )
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    body: dict = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        },
+    }
     if system:
-        config.system_instruction = system
+        body["systemInstruction"] = {"parts": [{"text": system}]}
 
-    resp = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=config,
-    )
-    return resp.text
+    resp = requests.post(url, params={"key": api_key}, json=body, timeout=120)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
 # ---------------------------------------------------------------------------
@@ -166,22 +167,24 @@ async def _query_google_async(
     temperature: float,
     max_tokens: int,
 ) -> str:
-    from google import genai
+    import httpx
 
-    client = genai.Client(api_key=api_key)
-    config = genai.types.GenerateContentConfig(
-        temperature=temperature,
-        max_output_tokens=max_tokens,
-    )
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    body: dict = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        },
+    }
     if system:
-        config.system_instruction = system
+        body["systemInstruction"] = {"parts": [{"text": system}]}
 
-    resp = await client.aio.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=config,
-    )
-    return resp.text
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(url, params={"key": api_key}, json=body, timeout=120)
+        resp.raise_for_status()
+        data = resp.json()
+    return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
 # ---------------------------------------------------------------------------
