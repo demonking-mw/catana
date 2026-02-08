@@ -48,7 +48,7 @@ EVAL_WEIGHTS: List[float] = [1.0, 1.5, 1.0, 1.0, 1.0]
 # Controls probability distribution: higher K = more different probabilities (more peaked),
 # lower K = more similar probabilities (more uniform). K=1.0 is standard softmax.
 # ALREADY TUNED
-K: float = 1
+K: float = 0.8
 
 
 # ── Dice-number → pip mapping ───────────────────────────────────────────────
