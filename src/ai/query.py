@@ -49,7 +49,7 @@ def _query_openai(
         model=model,
         messages=messages,
         temperature=temperature,
-        max_completion_tokens=max_tokens,
+        max_tokens=max_tokens,
     )
     return resp.choices[0].message.content
 
@@ -130,7 +130,7 @@ async def _query_openai_async(
         model=model,
         messages=messages,
         temperature=temperature,
-        max_completion_tokens=max_tokens,
+        max_tokens=max_tokens,
     )
     return resp.choices[0].message.content
 
@@ -234,29 +234,29 @@ def query_ai(
         The model's text reply.
     """
     if debug:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("AI QUERY DEBUG - PROMPT")
-        print("="*80)
+        print("=" * 80)
         if system:
             print(f"SYSTEM: {system}\n")
         print(f"USER: {prompt}")
-        print("="*80 + "\n")
-    
+        print("=" * 80 + "\n")
+
     model = model or get_default_model(provider)
     api_key = get_api_key(provider)
     dispatch_fn = _PROVIDER_DISPATCH.get(provider)
     if dispatch_fn is None:
         raise ValueError(f"No sync dispatch registered for provider: {provider}")
-    
+
     response = dispatch_fn(prompt, model, api_key, system, temperature, max_tokens)
-    
+
     if debug:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("AI QUERY DEBUG - RESPONSE")
-        print("="*80)
+        print("=" * 80)
         print(response)
-        print("="*80 + "\n")
-    
+        print("=" * 80 + "\n")
+
     return response
 
 
@@ -275,27 +275,29 @@ async def query_ai_async(
     Same interface as :func:`query_ai` but ``await``-able.
     """
     if debug:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("AI QUERY DEBUG - PROMPT (ASYNC)")
-        print("="*80)
+        print("=" * 80)
         if system:
             print(f"SYSTEM: {system}\n")
         print(f"USER: {prompt}")
-        print("="*80 + "\n")
-    
+        print("=" * 80 + "\n")
+
     model = model or get_default_model(provider)
     api_key = get_api_key(provider)
     dispatch_fn = _PROVIDER_DISPATCH_ASYNC.get(provider)
     if dispatch_fn is None:
         raise ValueError(f"No async dispatch registered for provider: {provider}")
-    
-    response = await dispatch_fn(prompt, model, api_key, system, temperature, max_tokens)
-    
+
+    response = await dispatch_fn(
+        prompt, model, api_key, system, temperature, max_tokens
+    )
+
     if debug:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("AI QUERY DEBUG - RESPONSE (ASYNC)")
-        print("="*80)
+        print("=" * 80)
         print(response)
-        print("="*80 + "\n")
-    
+        print("=" * 80 + "\n")
+
     return response

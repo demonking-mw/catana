@@ -37,7 +37,9 @@ def main() -> None:
     parser.add_argument("--model", default=None, help="Model override")
     parser.add_argument("--save", default=None, help="Save full report to file")
     parser.add_argument("--quiet", action="store_true", help="Suppress progress output")
-    parser.add_argument("--debug", action="store_true", help="Print AI prompts and responses")
+    parser.add_argument(
+        "--debug", action="store_true", help="Print AI prompts and responses"
+    )
     args = parser.parse_args()
 
     path = Path(args.json_file)
@@ -54,7 +56,9 @@ def main() -> None:
 
     # Always run settle simulation to get a complete board
     if not args.quiet:
-        print(f"Board has {len(gs.map.nodes)} settlements. Running settle simulation...")
+        print(
+            f"Board has {len(gs.map.nodes)} settlements. Running settle simulation..."
+        )
 
     results = simulate_settle(gs)
     if not results:

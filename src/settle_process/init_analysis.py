@@ -62,11 +62,24 @@ AGENT_MAX_TOKENS_2: int = 5500  # call 2: dynamics + win probability synthesis
 RESOURCE_NAMES = ["Wood", "Brick", "Wool", "Grain", "Ore"]
 
 # Tile resource types beyond the 5 player resources
-_RES_LABELS = {0: "Wood", 1: "Brick", 2: "Wool", 3: "Grain", 4: "Ore",
-               5: "Desert", 6: "Ocean"}
+_RES_LABELS = {
+    0: "Wood",
+    1: "Brick",
+    2: "Wool",
+    3: "Grain",
+    4: "Ore",
+    5: "Desert",
+    6: "Ocean",
+}
 
-_PORT_LABELS = {0: "2:1 Wood", 1: "2:1 Brick", 2: "2:1 Wool",
-                3: "2:1 Grain", 4: "2:1 Ore", 5: "3:1 any"}
+_PORT_LABELS = {
+    0: "2:1 Wood",
+    1: "2:1 Brick",
+    2: "2:1 Wool",
+    3: "2:1 Grain",
+    4: "2:1 Ore",
+    5: "3:1 any",
+}
 
 # Row sizes for the hex grid (row-major, top-to-bottom)
 _BOARD_ROW_SIZES = [4, 5, 6, 7, 6, 5, 4]

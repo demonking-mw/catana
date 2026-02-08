@@ -242,4 +242,13 @@ The agent function must be async, but you should call the ai apis in a sync orde
 Build this simple agent for me. BEWARE that you must prompt engineer carefully to avoid bad output, you must analyze all of the following, and that you can assume that the initial algorithmic analysis is a decent one but without much complexity and with limitation. Read through the code for the analysis and other functions for a better understanding on how they work
 
 
-Now you have 
+Now i got everything I need to build the perfect settle bot. Here is the workflow using the tools I built.
+1. ingest a json and make it a data object.
+2. run settle sim, which gives you a 20 playout simulation for each case, along with probability.
+3. make an async scoring orchestrator.
+- for the top X most likely, run the full analysis that uses AI. Make sure to deal with async await properly. 
+- for the rest, run the simple analysis. Async is optional here.
+after every analysis returns, sum (case_probability * player_0_chance_of_winning). This the score of this settle option
+return the one with the highest score.
+
+make x a tunable param, set it to 5
